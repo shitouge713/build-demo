@@ -1,6 +1,5 @@
 package com.build.demo.task;
 
-import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedWriter;
@@ -9,7 +8,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 输出文件位置：src/main/resources/result.txt
@@ -17,29 +19,31 @@ import java.util.concurrent.*;
 @Component
 public class ProduceUnevenTask {
 
-    public static ThreadFactory nameThread = new CustomizableThreadFactory("build-pool-");
-    public static ExecutorService threadPool = new ThreadPoolExecutor(
-            1, 1, 0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<Runnable>(2000), nameThread,
-            new ThreadPoolExecutor.CallerRunsPolicy());
+    private static final ExecutorService threadPool = Executors.newSingleThreadExecutor();
     public static ConcurrentHashMap<Integer, Integer> result = new ConcurrentHashMap<>();
-    CompletableFuture<Integer> future = CompletableFuture.completedFuture(null);
 
     /**
      * 并行提交，串行执行2000个任务
      */
     public void serialTask() {
+        CompletableFuture<Integer> future = CompletableFuture.completedFuture(null);
         for (int i = 0; i < 2000; i++) {
             int position = i + 1;
-            future = future.supplyAsync(() -> {
-                return result.put(position, produceUnevenNumberSum());
+            future.thenRunAsync(() -> {
+                //防止任务执行太快，取消不及时
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                result.put(position, produceUnevenNumberSum());
             }, threadPool).exceptionally(throwable -> {
-                System.out.println("当前线程：" + Thread.currentThread().getId() + ",执行了发生异常");
+                System.out.println("当前任务：" + position + ",执行过程中被取消");
                 return null;
             });
         }
         //任务执行结束后，打印所有结果
-        future.thenRunAsync(() -> {
+        new CompletableFuture<>().thenRunAsync(() -> {
             output(result, "src/main/resources", "result.txt");
         });
     }
@@ -50,9 +54,9 @@ public class ProduceUnevenTask {
      * @return
      */
     public boolean cancelTask() {
-        boolean flag = future.cancel(true);
+        threadPool.shutdownNow();
         output(result, "src/main/resources", "result.txt");
-        return flag;
+        return true;
     }
 
     /**
