@@ -26,10 +26,10 @@ public class ProduceUnevenTask {
      * 并行提交，串行执行2000个任务
      */
     public void serialTask() {
-        CompletableFuture<Integer> future = CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         for (int i = 0; i < 2000; i++) {
             int position = i + 1;
-            future.thenRunAsync(() -> {
+            future.thenAcceptAsync(a -> {
                 //防止任务执行太快，取消不及时
                 try {
                     Thread.sleep(20);
@@ -43,9 +43,9 @@ public class ProduceUnevenTask {
             });
         }
         //任务执行结束后，打印所有结果
-        new CompletableFuture<>().thenRunAsync(() -> {
+        future.whenCompleteAsync((res, ex) -> {
             output(result, "src/main/resources", "result.txt");
-        });
+        }, threadPool);
     }
 
     /**
